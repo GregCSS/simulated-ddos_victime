@@ -1,12 +1,21 @@
 #!/usr/bin/bash
 
-# This script invokes the Docker API, creates a subnet and creates containers (acting as bots) within it
+# This script invokes the Docker API to create containers (acting as bots)
 
 COUNT=${1:-5} # Takes in user input for N bots
 for ((i=1; i<=COUNT; i++)); do
-    ID=$(printf "bot_%03d" "$i")
-    echo "[+] Starting $ID"
+    NAME=$(printf "bot_%03d" "$i")
+    echo "[+] Starting $NAME"
     
-    docker run -d --name "$ID" --network botnet bot --id "$ID" \
-    --add-host=host.docker.internal:host-gateway
+    # Remove any existing container
+    if sudo docker container inspect "$NAME" &>/dev/null; then
+        sudo docker rm -f "$NAME" >/dev/null
+    fi
+
+    sudo docker run -d \
+    --name "$NAME" \
+    --add-host=host.docker.internal:host-gateway \
+    bot_image \
+    --master ws://host.docker.internal:8080/connect
+
 done

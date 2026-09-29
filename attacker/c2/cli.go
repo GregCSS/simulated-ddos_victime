@@ -105,7 +105,7 @@ $$$$$$$  |$$$$$$$  | $$$$$$  |\$$$$$$  |
 		args := strings.Fields(input)
 		rootCmd.SetArgs(args)
 		if err := rootCmd.Execute(); err != nil {
-			fmt.Printf("error: %v\n", err)
+			continue
 		}
 	}
 }

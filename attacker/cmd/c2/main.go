@@ -9,7 +9,7 @@ import (
 func main() {
 	m := c2.NewMaster()
 	go func() { // Starts HTTP server in non-blocking fashion
-		if err := m.Serve(":8080"); err != nil {
+		if err := m.Serve("0.0.0.0:8080"); err != nil {
 			log.Fatal(err)
 		}
 	}()

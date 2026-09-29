@@ -16,7 +16,7 @@ Documented cases include:
 This section details how the simulation has been designed.
 
 ### 1. Virtual Docker Container (Bot)
-This project uses **Docker** (Docker Network) to spin up multiple containers with scripts for:
+This project uses **Docker**, acting as the test environment, to spin up multiple containers with scripts for:
 * Establishing a Websocket connection to the Bot Master (C2 Layer)
 * Bash scripts to attack, using relevant tools such as `hping3`, a given target
 
@@ -43,4 +43,68 @@ Follow these steps to get your development environment setup.
 1. **Clone the repository**
     ```bash
     git clone https://github.com/dotping-me/simulated-ddos.git && cd simulated-ddos/
+    ```
+
+2. **Attacker Setup**
+    
+    Make sure to run the following scripts from within `/attacker`:
+    ```bash
+    cd attacker/ # From project root
+    ```
+    * **2.1. Build binairies**
+        ```bash
+        go buid -o bin/c2 ./cmd/c2/main.go
+        ```
+
+3. **Bot and Botnet Setup**
+    
+    Make sure to run the following scripts from within `/attacker`:
+    ```bash
+    cd attacker/ # From project root
+    ```
+
+    * **3.1. Start Docker daemon**
+        ```bash
+        sudo systemctl start docker
+        ```
+
+    * **3.2. Build Docker image**
+        ```bash
+        docker build --no-cache -f ./bot/Dockerfile -t bot_image .
+        ```
+
+    * **3.3. Ensure firewall does not get in the way**
+        ```bash
+        ../scripts/add_ufw_rule.sh # scripts/ found from Project root
+        ```
+
+        ***Note:*** 
+        * *Manually check (using `ip -4 addr`) and modify variables in `add_ufw_rule.sh` and `delete_ufw_rule.sh`*
+        * *Idea behind spinning up a bot is:*
+            ```bash
+            sudo docker run -d \
+                --add-host=host.docker.internal:host-gateway \
+                bot_image \
+                --master ws://host.docker.internal:8080/connect
+            ```
+        * To monitor container resource usage, use:
+            ```bash
+            sudo docker stats
+            ```
+
+3. **Victim Setup**
+
+    Make sure to run the following scripts from within `/victim`:
+    ```bash
+    cd victim/ # From project root
+    ```
+
+4. **Start C2 HTTP server**
+    ```bash
+    ./attacker/bin/c2 # From project root
+    ```
+
+5. **Spin up botnet**
+    ```bash
+    ./scripts/create_botnet.sh 10 # From project root and takes N bots as arg
     ```
