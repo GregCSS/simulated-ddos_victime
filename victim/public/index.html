@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple Library Search</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --text:#1b1b1b; --muted:#6b6b6b;
+    --accent:#2f5d50; --border:#e4e2dd;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    min-height:100vh;
+  }
+  header{padding:28px 20px 10px; text-align:center;}
+  h1{margin:0 0 4px; font-size:1.5rem;}
+  p.sub{color:var(--muted); margin:0; font-size:0.9rem;}
+
+  .controls{max-width:900px; margin:16px auto 0; padding:0 20px; display:flex; flex-direction:column; gap:10px;}
+  #search{
+    width:100%; padding:12px 16px; font-size:1rem;
+    border:1px solid var(--border); border-radius:10px;
+    background:var(--card); color:var(--text); outline:none;
+  }
+  #search:focus{border-color:var(--accent);}
+  .filter-row{display:flex; gap:8px; flex-wrap:wrap;}
+  select{
+    flex:1; min-width:140px; padding:9px 10px; border-radius:8px;
+    border:1px solid var(--border); background:var(--card); color:var(--text); font-size:0.85rem;
+  }
+
+  #meta{max-width:900px; margin:0 auto; padding:12px 20px 4px; color:var(--muted); font-size:0.82rem;}
+
+  .grid{
+    max-width:900px; margin:0 auto; padding:10px 20px 20px;
+    display:grid; grid-template-columns:repeat(4, 1fr); gap:14px;
+  }
+  @media (max-width:760px){ .grid{grid-template-columns:repeat(2, 1fr);} }
+  @media (max-width:420px){ .grid{grid-template-columns:1fr;} }
+
+  .item{
+    background:var(--card); border:1px solid var(--border); border-radius:10px;
+    padding:14px; aspect-ratio:1/1; display:flex; flex-direction:column;
+    justify-content:space-between; cursor:pointer;
+  }
+  .item:hover{border-color:var(--accent);}
+  .item h3{margin:0 0 4px; font-size:0.95rem; line-height:1.25;}
+  .item p{margin:0; color:var(--muted); font-size:0.78rem;}
+  .tag{
+    align-self:flex-start; font-size:0.68rem; padding:2px 8px; border-radius:999px;
+    background:var(--accent); color:#fff; opacity:0.85;
+  }
+  .year-rating{display:flex; justify-content:space-between; font-size:0.72rem; color:var(--muted); margin-top:6px;}
+
+  .empty{grid-column:1/-1; text-align:center; color:var(--muted); padding:40px 20px;}
+
+  .pagination{
+    max-width:900px; margin:0 auto; padding:0 20px 60px;
+    display:flex; justify-content:center; align-items:center; gap:12px;
+  }
+  .pagination button{
+    padding:8px 14px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card); cursor:pointer; font-size:0.85rem;
+  }
+  .pagination button:disabled{opacity:0.4; cursor:not-allowed;}
+  .pagination span{font-size:0.85rem; color:var(--muted);}
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none;
+    align-items:center; justify-content:center; padding:20px; z-index:10;
+  }
+  .overlay.open{display:flex;}
+  .modal{background:var(--card); border-radius:14px; max-width:420px; width:100%; padding:22px; border:1px solid var(--border);}
+  .modal h2{margin:0 0 6px; font-size:1.2rem;}
+  .modal p{margin:4px 0; font-size:0.9rem; color:var(--muted);}
+  .modal-close{margin-top:16px; width:100%; padding:10px; border-radius:8px; border:none; background:var(--accent); color:#fff; font-size:0.9rem; cursor:pointer;}
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 Simple Library</h1>
+  <p class="sub">Search a 55-book dataset, served from a Node.js API</p>
+</header>
+
+<div class="controls">
+  <input id="search" type="text" placeholder="Try “Orwell”, “Sci-Fi”, “Kitchen”..." autocomplete="off">
+  <div class="filter-row">
+    <select id="genreFilter"><option value="">All genres</option></select>
+    <select id="sortBy">
+      <option value="title">Sort: Title (A–Z)</option>
+      <option value="year">Sort: Year (newest)</option>
+      <option value="rating">Sort: Rating (high–low)</option>
+    </select>
+  </div>
+</div>
+
+<div id="meta"></div>
+<div class="grid" id="grid"></div>
+<div class="pagination">
+  <button id="prevBtn">← Prev</button>
+  <span id="pageInfo"></span>
+  <button id="nextBtn">Next →</button>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+const searchInput = document.getElementById('search');
+const genreFilter = document.getElementById('genreFilter');
+const sortBy = document.getElementById('sortBy');
+const grid = document.getElementById('grid');
+const metaEl = document.getElementById('meta');
+const pageInfo = document.getElementById('pageInfo');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const overlay = document.getElementById('overlay');
+const modalContent = document.getElementById('modalContent');
+
+const PAGE_SIZE = 16; // 4x4 grid
+let currentPage = 1;
+let totalPages = 1;
+let debounceTimer;
+
+function stars(r){
+  const full = Math.round(r);
+  return '★'.repeat(full) + '☆'.repeat(5 - full) + ` (${r})`;
+}
+
+async function loadGenres(){
+  try{
+    const res = await fetch('/api/genres');
+    const genres = await res.json();
+    genres.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g; opt.textContent = g;
+      genreFilter.appendChild(opt);
+    });
+  }catch(e){ console.error('Failed to load genres', e); }
+}
+
+async function loadBooks(){
+  const params = new URLSearchParams({
+    q: searchInput.value.trim(),
+    genre: genreFilter.value,
+    sort: sortBy.value,
+    page: currentPage,
+    pageSize: PAGE_SIZE
+  });
+  try{
+    const res = await fetch('/api/books?' + params.toString());
+    const data = await res.json();
+    totalPages = data.totalPages;
+    render(data);
+  }catch(e){
+    grid.innerHTML = '<div class="empty">Could not reach the server. Is server.js running?</div>';
+    console.error(e);
+  }
+}
+
+function render(data){
+  metaEl.textContent = `${data.total} result${data.total === 1 ? '' : 's'}`;
+  pageInfo.textContent = `Page ${data.page} of ${data.totalPages}`;
+  prevBtn.disabled = data.page <= 1;
+  nextBtn.disabled = data.page >= data.totalPages;
+
+  grid.innerHTML = '';
+  if(data.results.length === 0){
+    grid.innerHTML = '<div class="empty">No books match your search.</div>';
+    return;
+  }
+  for(const b of data.results){
+    const div = document.createElement('div');
+    div.className = 'item';
+    div.innerHTML = `
+      <div>
+        <h3>${b.title}</h3>
+        <p>${b.author}</p>
+      </div>
+      <div>
+        <span class="tag">${b.genre}</span>
+        <div class="year-rating"><span>${b.year}</span><span>${stars(b.rating)}</span></div>
+      </div>`;
+    div.addEventListener('click', () => openModal(b));
+    grid.appendChild(div);
+  }
+}
+
+function openModal(b){
+  modalContent.innerHTML = `
+    <h2>${b.title}</h2>
+    <p>by ${b.author} · ${b.year}</p>
+    <p>${stars(b.rating)}</p>
+    <span class="tag">${b.genre}</span>
+    <button class="modal-close" id="closeModal">Close</button>
+  `;
+  overlay.classList.add('open');
+  document.getElementById('closeModal').addEventListener('click', closeModal);
+}
+function closeModal(){ overlay.classList.remove('open'); }
+overlay.addEventListener('click', (e) => { if(e.target === overlay) closeModal(); });
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => { currentPage = 1; loadBooks(); }, 250);
+});
+genreFilter.addEventListener('change', () => { currentPage = 1; loadBooks(); });
+sortBy.addEventListener('change', () => { currentPage = 1; loadBooks(); });
+prevBtn.addEventListener('click', () => { if(currentPage > 1){ currentPage--; loadBooks(); } });
+nextBtn.addEventListener('click', () => { if(currentPage < totalPages){ currentPage++; loadBooks(); } });
+
+loadGenres();
+loadBooks();
+</script>
+</body>
+</html>

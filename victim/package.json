@@ -1,0 +1,12 @@
+{
+  "name": "simple-library-search",
+  "version": "1.0.0",
+  "description": "Simple Library Search - Express backend + static frontend with a 4x4 grid search UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
