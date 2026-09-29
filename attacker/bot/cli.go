@@ -10,7 +10,7 @@ import (
 func getOutboundIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		return "" // TODO: Account for this
+		return ""
 	}
 	defer conn.Close()
 
@@ -22,6 +22,19 @@ func NewCLI() *cobra.Command {
 		id     string
 		master string
 	)
+
+	fmt.Println(`
+$$$$$$$\   $$$$$$\ $$$$$$$$\ 
+$$  __$$\ $$  __$$\\__$$  __|
+$$ |  $$ |$$ /  $$ |  $$ |   
+$$$$$$$\ |$$ |  $$ |  $$ |   
+$$  __$$\ $$ |  $$ |  $$ |   
+$$ |  $$ |$$ |  $$ |  $$ |   
+$$$$$$$  | $$$$$$  |  $$ |   
+\_______/  \______/   \__|   
+	`)
+
+	fmt.Println("DDoS Simulation: BOT CLI\n")
 
 	rootCmd := &cobra.Command{
 		Use:   "bot",
@@ -37,21 +50,9 @@ func NewCLI() *cobra.Command {
 		},
 	}
 
-	rootCmd.Flags().StringVarP(
-		&id,
-		"id",
-		"i",
-		getOutboundIP(),
-		"Bot ID",
-	)
-
-	rootCmd.Flags().StringVarP(
-		&master,
-		"master",
-		"m",
-		"ws://localhost:8080/connect",
-		"Botmaster WebSocket URL",
-	)
+	// Setting flags which creates bot automatically
+	rootCmd.Flags().StringVarP(&id, "id", "i", getOutboundIP(), "Bot ID")
+	rootCmd.Flags().StringVarP(&master, "master", "m", "ws://localhost:8080/connect", "Botmaster WebSocket URL")
 
 	return rootCmd
 }
